@@ -20,7 +20,7 @@ let xml = fs.readFileSync(manifestPath, 'utf8');
 // 1) AdMob APPLICATION_ID (TEST)
 const ADMOB_META = `        <meta-data
             android:name="com.google.android.gms.ads.APPLICATION_ID"
-            android:value="ca-app-pub-3940256099942544~3347511713"/>`;
+            android:value="ca-app-pub-5712899602059155~1588643327"/>`;
 if (!xml.includes('com.google.android.gms.ads.APPLICATION_ID')) {
   xml = xml.replace(/(<application[^>]*>)/, `$1\n\n${ADMOB_META}`);
   console.log('+ AdMob APPLICATION_ID adaugat (ID de TEST Google)');

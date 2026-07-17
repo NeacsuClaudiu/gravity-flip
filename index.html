@@ -387,7 +387,7 @@
   // ---------- RECLAME + REMOVE ADS (active doar in aplicatia Android; pe web totul e no-op) ----------
   const isNative = !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
   const AdMobP = isNative && window.Capacitor.Plugins ? window.Capacitor.Plugins.AdMob : null;
-  const AD_INTERSTITIAL_ID = 'ca-app-pub-3940256099942544/1033173712'; // ID de TEST Google - inlocuieste cu ID-ul tau real la publicare
+  const AD_INTERSTITIAL_ID = 'ca-app-pub-5712899602059155/2395981046';
   let adReady = false, deathsSinceAd = 0;
   async function adsInit() {
     if (!AdMobP) return;
@@ -424,7 +424,7 @@
   }
 
   // reclame rewarded (alegi sa te uiti): revive / 2x coins / free ball claw
-  const AD_REWARDED_ID = 'ca-app-pub-3940256099942544/5224354917'; // ID de TEST Google - inlocuieste la publicare
+  const AD_REWARDED_ID = 'ca-app-pub-5712899602059155/7659227651';
   let rewardReady = false, rewardCb = null, rewardGot = false;
   async function rewardPrepare() {
     if (!AdMobP || rewardReady) return;
