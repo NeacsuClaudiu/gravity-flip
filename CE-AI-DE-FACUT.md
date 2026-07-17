@@ -86,7 +86,7 @@ Or buy Remove Ads once and skip all ads forever.
 **Etichete:** casual, arcade, single player
 
 **Contact:**
-- Email: `nclaudiu27@gmail.com`
+- Email: `polarbearstudio.dev@gmail.com`
 - Site web: `https://neacsuclaudiu.github.io/gravity-flip/`
 - **Politică de confidențialitate: `https://neacsuclaudiu.github.io/gravity-flip/privacy.html`**
 
@@ -96,7 +96,7 @@ Or buy Remove Ads once and skip all ads forever.
 
 **Policy → App content → Content ratings → Start questionnaire**
 
-- Email: `nclaudiu27@gmail.com`
+- Email: `polarbearstudio.dev@gmail.com`
 - Categorie: **Game — Casual/Arcade**
 - La toate întrebările despre violență, sex, droguri, gambling, teme sensibile: **NO** (jocul e curat)
 - La „Does the app include ads": **YES**
