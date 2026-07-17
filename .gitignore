@@ -5,5 +5,7 @@ android/build/
 android/.kotlin/
 android/local.properties
 android/app/release/
+android/keystore.properties
+KEYSTORE-CREDENTIALS.txt
 *.keystore
 www/
