@@ -43,7 +43,7 @@
 
   // ---------- TUNING ----------
   const TUNE = {
-    baseSpeed: 340, speedRamp: 7, maxSpeed: 900,
+    baseSpeed: 340, speedRamp: 7, maxSpeed: 1080,
     gravity: 4200, flipImpulse: 480,
     playerSize: 30, floorH: 42,
     spikeW: 34, spikeH: 30, coinR: 11,
@@ -342,13 +342,21 @@
       noPowerRun: false, noFlipRun: false, earlyDeath: false, tripleRare: false, portalSurvived: false, dailyPlayed: false };
   }
   let save = {
-    v: 2, best: 0, wallet: 0, skin: 'cub', unlocked: ['cub'], sound: true,
+    v: 2, best: 0, wallet: 0, skin: 'cub', unlocked: ['cub'], sound: true, noAds: false, freeClaw: '',
     name: 'Player' + (1000 + Math.floor(Math.random() * 9000)),
     m: { dist: { t: 0, p: 0 }, coins: { t: 0, p: 0 }, flips: { t: 0, p: 0 } },
     ach: [], stats: freshStats(),
     lvl: { max: 1, stars: {} },
   };
   const soundOn = () => save.sound !== false;
+  // in aplicatia Android / browser local nu exista storage-ul partajat de pe claude.ai;
+  // folosim localStorage ca progresul sa persiste intre sesiuni
+  if (typeof window.storage === 'undefined' && window.localStorage) {
+    window.storage = {
+      get: k => Promise.resolve({ value: localStorage.getItem('gfs-' + k) }),
+      set: (k, v) => { try { localStorage.setItem('gfs-' + k, v); } catch (e) {} return Promise.resolve(); },
+    };
+  }
   const hasStorage = typeof window.storage !== 'undefined';
   async function loadSave() {
     if (!hasStorage) return;
@@ -374,6 +382,91 @@
   async function persist() {
     if (!hasStorage) return;
     try { await window.storage.set('gravity-flip-save', JSON.stringify(save)); } catch (e) {}
+  }
+
+  // ---------- RECLAME + REMOVE ADS (active doar in aplicatia Android; pe web totul e no-op) ----------
+  const isNative = !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
+  const AdMobP = isNative && window.Capacitor.Plugins ? window.Capacitor.Plugins.AdMob : null;
+  const AD_INTERSTITIAL_ID = 'ca-app-pub-3940256099942544/1033173712'; // ID de TEST Google - inlocuieste cu ID-ul tau real la publicare
+  let adReady = false, deathsSinceAd = 0;
+  async function adsInit() {
+    if (!AdMobP) return;
+    try {
+      await AdMobP.initialize({});
+      // consimtamant GDPR (UMP) - apare doar daca e configurat in consola AdMob
+      try {
+        const ci = await AdMobP.requestConsentInfo({});
+        if (ci && ci.isConsentFormAvailable && ci.status === 'REQUIRED') await AdMobP.showConsentForm();
+      } catch (e) {}
+      // recompensa se acorda la inchiderea reclamei, doar daca a fost vizionata
+      try {
+        AdMobP.addListener('onRewardedVideoAdReward', () => { rewardGot = true; });
+        AdMobP.addListener('onRewardedVideoAdDismissed', () => {
+          if (rewardGot && rewardCb) { const cb = rewardCb; rewardCb = null; try { cb(); } catch (e) {} }
+          rewardCb = null; rewardGot = false;
+          rewardPrepare();
+        });
+      } catch (e) {}
+      adPrepare();
+      rewardPrepare();
+    } catch (e) {}
+  }
+  async function adPrepare() {
+    if (!AdMobP || save.noAds || adReady) return;
+    try { await AdMobP.prepareInterstitial({ adId: AD_INTERSTITIAL_ID }); adReady = true; } catch (e) {}
+  }
+  function maybeShowAd() {
+    if (!AdMobP || save.noAds) return;
+    deathsSinceAd++;
+    if (deathsSinceAd < 3 || !adReady) { adPrepare(); return; } // inca nu e a 3-a moarte / reclama nu e incarcata
+    deathsSinceAd = 0; adReady = false;
+    AdMobP.showInterstitial().catch(() => {}).then(() => adPrepare());
+  }
+
+  // reclame rewarded (alegi sa te uiti): revive / 2x coins / free ball claw
+  const AD_REWARDED_ID = 'ca-app-pub-3940256099942544/5224354917'; // ID de TEST Google - inlocuieste la publicare
+  let rewardReady = false, rewardCb = null, rewardGot = false;
+  async function rewardPrepare() {
+    if (!AdMobP || rewardReady) return;
+    try { await AdMobP.prepareRewardVideoAd({ adId: AD_REWARDED_ID }); rewardReady = true; } catch (e) {}
+  }
+  function showRewarded(onReward) {
+    if (!AdMobP || !rewardReady) { sfx('deny'); return; }
+    rewardReady = false; rewardGot = false; rewardCb = onReward;
+    AdMobP.showRewardVideoAd().catch(() => { rewardCb = null; rewardPrepare(); });
+  }
+
+  // plata unica "remove ads" prin Google Play Billing (cordova-plugin-purchase)
+  const IAP_ID = 'remove_ads';
+  let iapReady = false, iapPrice = '';
+  function grantNoAds() {
+    if (save.noAds) return;
+    save.noAds = true; persist(); sfx('legend');
+  }
+  function iapInit() {
+    const CP = window.CdvPurchase, St = CP && CP.store;
+    if (!St) return;
+    try {
+      St.register([{ id: IAP_ID, type: CP.ProductType.NON_CONSUMABLE, platform: CP.Platform.GOOGLE_PLAY }]);
+      St.when()
+        .approved(tr => { try { if (tr.products && tr.products.some(p => p.id === IAP_ID)) grantNoAds(); } catch (e) {} tr.verify(); })
+        .verified(r => r.finish())
+        .productUpdated(p => {
+          if (p.id !== IAP_ID) return;
+          try { const o = p.getOffer(); if (o && o.pricingPhases && o.pricingPhases[0]) iapPrice = o.pricingPhases[0].price; } catch (e) {}
+          if (p.owned) grantNoAds(); // restaurare automata dupa reinstalare
+        });
+      St.initialize([CP.Platform.GOOGLE_PLAY]).then(() => { iapReady = true; });
+    } catch (e) {}
+  }
+  function buyNoAds() {
+    const CP = window.CdvPurchase, St = CP && CP.store;
+    if (!St || !iapReady) { sfx('deny'); return; }
+    try {
+      const p = St.get(IAP_ID, CP.Platform.GOOGLE_PLAY);
+      const o = p && p.getOffer();
+      if (o) o.order(); else sfx('deny');
+    } catch (e) { sfx('deny'); }
   }
 
   // ---------- AUDIO ----------
@@ -435,6 +528,9 @@
   let combo, comboT;
   let effect, effectT;
   let runTime, runPower, runRare, runPortals, runPortalSurv;
+  // revive / 2x coins (rewarded) + contorizare pe segmente ca revive-ul sa nu dubleze statisticile
+  let runRevived, runDoubled, runCounted;
+  let bankedM, bankedCoins, bankedFlips, bankedRare, bankedPower, bankedPortals;
 
   function reset(m, n) {
     mode = m || 'endless';
@@ -455,6 +551,8 @@
     combo = 1; comboT = 0;
     effect = null; effectT = 0;
     runTime = 0; runPower = 0; runRare = 0; runPortals = 0; runPortalSurv = false;
+    runRevived = false; runDoubled = false; runCounted = false;
+    bankedM = 0; bankedCoins = 0; bankedFlips = 0; bankedRare = 0; bankedPower = 0; bankedPortals = 0;
     lbTop = null; lbRank = 0;
     player.y = H - TUNE.floorH - TUNE.playerSize;
   }
@@ -474,9 +572,11 @@
 
   function inZone(x, y, r) { return r && x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h; }
 
-  function openCrate() {
-    if (save.wallet < TUNE.crateCost) { sfx('deny'); return; }
-    save.wallet -= TUNE.crateCost;
+  function openCrate(free) {
+    if (!free) {
+      if (save.wallet < TUNE.crateCost) { sfx('deny'); return; }
+      save.wallet -= TUNE.crateCost;
+    }
     save.stats.crates++;
     const roll = Math.random();
     const rarity = roll < 0.70 ? 0 : roll < 0.995 ? 1 : 2;
@@ -515,6 +615,11 @@
     if (inZone(x, y, menuZones.daily)) { state = S.PLAY; reset('daily'); return true; }
     if (inZone(x, y, menuZones.levels)) { state = S.LVL; sfx('coin'); return true; }
     if (inZone(x, y, menuZones.ach))   { achPage = 0; state = S.ACH; sfx('coin'); return true; }
+    if (inZone(x, y, menuZones.noads)) { buyNoAds(); return true; }
+    if (inZone(x, y, menuZones.freeclaw)) {
+      showRewarded(() => { save.freeClaw = dateStr(); openCrate(true); });
+      return true;
+    }
     if (inZone(x, y, menuZones.play))  { state = S.PLAY; reset('endless'); return true; }
     if (inZone(x, y, menuZones.sound)) { save.sound = !soundOn(); persist(); sfx('coin'); return true; }
     return false;
@@ -523,6 +628,7 @@
   // fullscreen pe mobil + blocare landscape; Chrome acorda "user activation"
   // abia la pointerup/touchend, NU la pointerdown - de aceea cererea se face acolo
   function goFullscreen() {
+    if (isNative) return; // in aplicatie ecranul e deja imersiv (MainActivity)
     if (document.fullscreenElement || document.webkitFullscreenElement) return;
     const el = document.documentElement;
     const req = el.requestFullscreen || el.webkitRequestFullscreen;
@@ -546,6 +652,11 @@
       state = S.PLAY; reset('endless'); return;
     }
     if (state === S.DEAD) {
+      if (inZone(x, y, deadZones && deadZones.revive)) { showRewarded(revive); return; }
+      if (inZone(x, y, deadZones && deadZones.dbl)) {
+        showRewarded(() => { runDoubled = true; save.wallet += coinCount; persist(); sfx('buy'); });
+        return;
+      }
       if (inZone(x, y, deadZones && deadZones.retry)) { state = S.PLAY; reset(mode); return; }
       if (inZone(x, y, deadZones && deadZones.menu))  { state = S.MENU; sfx('coin'); return; }
       return;
@@ -636,7 +747,7 @@
     } else if (r < 0.85) {
       // bare laser sus + jos; treci prin golul din centru
       const playH = H - 2 * TUNE.floorH;
-      const gap = Math.min(240 + R() * 60, playH - 60);
+      const gap = Math.min(205 + R() * 50, playH - 60);
       const half = gap / 2, margin = 26;
       let cy = TUNE.floorH + half + margin + R() * Math.max(1, playH - gap - margin * 2);
       cy = Math.min(H - TUNE.floorH - half - margin, cy);
@@ -669,6 +780,27 @@
     const y = onCeilSide ? TUNE.floorH + 22 : H - TUNE.floorH - 22;
     for (let i = 0; i < n; i++) coins.push({ x: x + i * 42, y, taken: false, rare: false });
     lvlCoinsSpawned += n;
+  }
+
+  // e punctul (x,y) in interiorul unui obstacol solid? (pt. a nu pune banuti necolectabili)
+  function pointInObstacle(x, y, pad) {
+    for (const o of obstacles) {
+      if (o.type === 'wall') {
+        const gapH = wallGapH(o), wallW = o.w || 26;
+        const wy = o.gapTop ? TUNE.floorH + gapH : TUNE.floorH;
+        const wh = H - 2 * TUNE.floorH - gapH;
+        if (x > o.x - pad && x < o.x + wallW + pad && y > wy - pad && y < wy + wh + pad) return true;
+      } else if (o.type === 'slab') {
+        if (x > o.x - pad && x < o.x + o.len + pad) {
+          if (y < o.gapY + pad && y > TUNE.floorH) return true;
+          if (y > o.gapY + o.gapH - pad && y < H - TUNE.floorH) return true;
+        }
+      } else if (o.type === 'laser') {
+        const lHalf = o.gap / 2;
+        if (x > o.x - 10 - pad && x < o.x + 10 + pad && (y < o.cy - lHalf + pad || y > o.cy + lHalf - pad)) return true;
+      }
+    }
+    return false;
   }
 
   function spawnPortal() {
@@ -756,7 +888,9 @@
     const speedMul = effect === 'turbo' ? 1.35 : 1;
     const gravMul = effect === 'grav2' ? 2 : 1;
 
-    speed = Math.min(TUNE.maxSpeed, speed + TUNE.speedRamp * dt);
+    // spre final viteza creste tot mai greu (taper de la 780 spre maxim)
+    const rampMul = speed <= 780 ? 1 : Math.max(0.22, (TUNE.maxSpeed - speed) / (TUNE.maxSpeed - 780));
+    speed = Math.min(TUNE.maxSpeed, speed + TUNE.speedRamp * rampMul * dt);
     const ws = speed * speedMul;
     dist += ws * dt;
 
@@ -822,7 +956,9 @@
         goldSpawnT = 0.11;
         goldPhase += 0.55;
         const amp = Math.min(H / 2 - TUNE.floorH - 60, 150);
-        coins.push({ x: W + 40, y: H / 2 + Math.sin(goldPhase) * amp, taken: false, rare: false });
+        const gy = H / 2 + Math.sin(goldPhase) * amp;
+        // nu pune banuti in interiorul blocurilor/laserelor (ar fi necolectabili)
+        if (!pointInObstacle(W + 40, gy, 16)) coins.push({ x: W + 40, y: gy, taken: false, rare: false });
       }
     }
     if (effectT > 0) {
@@ -970,29 +1106,35 @@
   }
 
   function bankRun() {
+    // dupa un revive, bankRun ruleaza din nou la a doua moarte: contorizam doar DELTELE
+    // fata de ce s-a "incasat" deja, ca sa nu se dubleze banii/misiunile/statisticile
     const s = score();
-    const runM = Math.floor(dist / 10);
+    const fullM = Math.floor(dist / 10);
+    const dM = fullM - bankedM, dC = coinCount - bankedCoins, dF = flips - bankedFlips;
+    const dRare = runRare - bankedRare, dPow = runPower - bankedPower, dPor = runPortals - bankedPortals;
+    bankedM = fullM; bankedCoins = coinCount; bankedFlips = flips;
+    bankedRare = runRare; bankedPower = runPower; bankedPortals = runPortals;
     if (s > best) best = s;
     save.best = Math.max(save.best, s);
-    save.wallet += coinCount;
+    save.wallet += dC;
 
-    save.m.dist.p += runM;
-    save.m.coins.p += coinCount;
-    save.m.flips.p += flips;
+    save.m.dist.p += dM;
+    save.m.coins.p += dC;
+    save.m.flips.p += dF;
 
     const st = save.stats;
-    st.runs++;
-    st.totalDist += runM;
-    st.totalCoins += coinCount;
-    st.totalFlips += flips;
-    st.rareCoins += runRare;
-    st.powerups += runPower;
-    st.portals += runPortals;
+    if (!runCounted) { st.runs++; runCounted = true; }
+    st.totalDist += dM;
+    st.totalCoins += dC;
+    st.totalFlips += dF;
+    st.rareCoins += dRare;
+    st.powerups += dPow;
+    st.portals += dPor;
     st.bestScore = Math.max(st.bestScore, s);
-    st.bestRunDist = Math.max(st.bestRunDist, runM);
+    st.bestRunDist = Math.max(st.bestRunDist, fullM);
     st.bestRunCoins = Math.max(st.bestRunCoins, coinCount);
-    if (runPower === 0 && runM >= 2500) st.noPowerRun = true;
-    if (flips === 0 && runM >= 300) st.noFlipRun = true;
+    if (runPower === 0 && fullM >= 2500) st.noPowerRun = true;
+    if (flips === 0 && fullM >= 300) st.noFlipRun = true;
     if (runTime < 3) st.earlyDeath = true;
     if (runRare >= 5) st.tripleRare = true;
     if (runPortalSurv) st.portalSurvived = true;
@@ -1021,6 +1163,22 @@
     bankRun();
     if (mode === 'daily') submitDaily(score());
     persist();
+    maybeShowAd(); // interstitial la fiecare a 3-a moarte (daca nu a cumparat remove ads)
+  }
+
+  // reinviere dupa reclama rewarded: continua ACEEASI runda (scor/distanta pastrate)
+  function revive() {
+    runRevived = true;
+    state = S.PLAY;
+    obstacles = [];            // curata ecranul ca sa ai loc de reintrare
+    effect = null; effectT = 0;
+    gravDir = 1;
+    player.y = H - TUNE.floorH - TUNE.playerSize;
+    player.vy = 0; player.grounded = true; player.inv = 2.2;
+    shake = 0; flashT = 0.25;
+    spawnTimer = Math.max(spawnTimer, 1.1);
+    sfx('power');
+    burst(player.x + TUNE.playerSize/2, player.y + TUNE.playerSize/2, '#00ff9d', 24);
   }
 
   function levelComplete() {
@@ -1691,10 +1849,23 @@
 
       const bw = 156, bgap = 18;
       const by = Math.min(Math.max(ty + 8, cy + 40), H - 58);
-      deadZones = {
-        retry: imgButton('retry', W/2 - bw - bgap/2, by, bw),
-        menu:  imgButton('back', W/2 + bgap/2, by, bw),
-      };
+      deadZones = {};
+      // butoane rewarded (doar in aplicatie, cu reclama incarcata; o data pe runda)
+      const canRevive = isNative && rewardReady && !runRevived;
+      const canDbl = isNative && rewardReady && !runDoubled && coinCount > 0;
+      if ((canRevive || canDbl) && by > 100) {
+        const ry = by - 50;
+        if (canRevive && canDbl) {
+          deadZones.revive = button(W/2 - bw - bgap/2, ry, bw, 40, '▶ REVIVE', '#00ff9d', 13);
+          deadZones.dbl    = button(W/2 + bgap/2, ry, bw, 40, '▶ 2X COINS +' + coinCount, '#ffd700', 13);
+        } else if (canRevive) {
+          deadZones.revive = button(W/2 - bw/2, ry, bw, 40, '▶ REVIVE', '#00ff9d', 13);
+        } else {
+          deadZones.dbl = button(W/2 - bw/2, ry, bw, 40, '▶ 2X COINS +' + coinCount, '#ffd700', 13);
+        }
+      }
+      deadZones.retry = imgButton('retry', W/2 - bw - bgap/2, by, bw);
+      deadZones.menu  = imgButton('back', W/2 + bgap/2, by, bw);
     }
   }
 
@@ -1809,6 +1980,14 @@
     zones.crate = button(bx, by, bw, bh, 'BALL CLAW ' + TUNE.crateCost + ' \u{1F7E1}', '#ffd700', bfont); by += 46;
     zones.daily = button(bx, by, bw, bh, 'DAILY', '#b026ff', bfont); by += 46;
     zones.ach = button(bx, by, bw, bh, 'ACHIEVEMENTS ' + save.ach.length + '/' + ACH.length, '#00ff9d', bfont); by += 46;
+    // plata unica de scoatere a reclamelor - doar in aplicatie, ascuns dupa cumparare
+    if (isNative && !save.noAds) {
+      zones.noads = button(bx, by, bw, bh, 'REMOVE ADS' + (iapPrice ? '  ' + iapPrice : ''), '#ff5a7a', bfont); by += 46;
+    }
+    // o tragere gratis pe zi la BALL CLAW, contra unei reclame rewarded
+    if (isNative && rewardReady && save.freeClaw !== dateStr()) {
+      zones.freeclaw = button(bx, by, bw, bh, '▶ FREE BALL CLAW', '#00e5ff', bfont); by += 46;
+    }
 
     // PLAY button (PackCyanBlue) + sound toggle
     const pw2 = Math.min(200, colW - 16);
@@ -2369,6 +2548,8 @@
   }
   reset('endless');
   loadSave();
+  adsInit();                                          // AdMob (doar in aplicatie)
+  document.addEventListener('deviceready', iapInit); // Google Play Billing (doar in aplicatie)
   requestAnimationFrame(loop);
 })();
 </script>
