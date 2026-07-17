@@ -1,0 +1,11 @@
+{
+  "appId": "com.nclaudiu.gravityflip",
+  "appName": "Gravity Flip",
+  "webDir": "www",
+  "android": {
+    "allowMixedContent": false
+  },
+  "server": {
+    "androidScheme": "https"
+  }
+}
