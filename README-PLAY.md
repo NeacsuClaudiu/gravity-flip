@@ -1,8 +1,8 @@
-# Gravity Flip — ghid publicare Google Play
+# Gravity Breach — ghid publicare Google Play
 
 ## Ce e deja făcut ✅
 
-- **Proiect Capacitor + Android** (`com.nclaudiu.gravityflip`, nume „Gravity Flip"), landscape, ecran imersiv (fără bare de sistem).
+- **Proiect Capacitor + Android** (`com.nclaudiu.gravityflip`, nume „Gravity Breach"), landscape, ecran imersiv (fără bare de sistem).
 - **Reclame AdMob (interstitial)**: apare la **fiecare a 3-a moarte**, cu **ID-uri de TEST** Google (vezi mai jos cum le înlocuiești).
 - **Reclame rewarded (alegi să te uiți)** — 3 plasamente:
   - **▶ FREE BALL CLAW** (meniu): o tragere gratis la mașina de skinuri, **o dată pe zi**;

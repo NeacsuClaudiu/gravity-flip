@@ -1,4 +1,4 @@
-# 🚀 Gravity Flip — Ce mai ai de făcut pentru Play Store
+# 🚀 Gravity Breach — Ce mai ai de făcut pentru Play Store
 
 _Ultima actualizare: 2026-07-17_
 
@@ -35,7 +35,7 @@ Deschide `KEYSTORE-CREDENTIALS.txt` și **copiază** aceste 2 fișiere pe Google
 
 1. Intri pe [play.google.com/console](https://play.google.com/console)
 2. **Create app**
-3. Nume: `Gravity Flip`
+3. Nume: `Gravity Breach`
 4. Limbă implicită: `English (US)` (poți adăuga română după)
 5. Tipul: **Game**
 6. Gratuit sau plătit: **Free**
@@ -47,7 +47,7 @@ Deschide `KEYSTORE-CREDENTIALS.txt` și **copiază** aceste 2 fișiere pe Google
 
 **Titlu (max 30 caractere):**
 ```
-Gravity Flip: Neon Arcade
+Gravity Breach: Neon Arcade
 ```
 
 **Descriere scurtă (max 80 caractere):**

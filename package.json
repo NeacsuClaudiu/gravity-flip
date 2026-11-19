@@ -1,7 +1,7 @@
 {
   "name": "gravity-flip",
   "version": "1.0.0",
-  "description": "Gravity Flip — neon gravity-flip arcade runner with BALL CLAW skin machine",
+  "description": "Gravity Breach — neon gravity-flip arcade runner with BALL CLAW skin machine",
   "type": "module",
   "scripts": {
     "copy": "node scripts/copy-www.mjs",

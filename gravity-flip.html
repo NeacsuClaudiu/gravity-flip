@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>Gravity Flip</title>
+<title>Gravity Breach</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   html, body { width: 100%; height: 100%; background: #05060f; overflow: hidden;
@@ -648,8 +648,8 @@
     const x = rotated ? e.clientY : e.clientX;
     const y = rotated ? window.innerWidth - e.clientX : e.clientY;
     if (state === S.MENU) {
-      if (menuTap(x, y)) return;
-      state = S.PLAY; reset('endless'); return;
+      menuTap(x, y); // doar butoanele pornesc ceva - tap in gol nu mai porneste un meci nou
+      return;
     }
     if (state === S.DEAD) {
       if (inZone(x, y, deadZones && deadZones.revive)) { showRewarded(revive); return; }
@@ -1517,12 +1517,36 @@
     roundRect(bx + 3, by + 3, bw - 6, bh - 6, 4); ctx.fill();
     ctx.strokeStyle = '#0f6273'; ctx.lineWidth = 2;
     roundRect(bx + 5, by + 5, bw - 10, bh - 10, 3); ctx.stroke();
-    ctx.font = 'bold ' + (size || 15) + 'px Courier New';
+    // text intr-un singur strat, albastru inchis: umbra decalata il facea greu de citit la 11-13px
+    let fs = size || 15;
+    ctx.font = 'bold ' + fs + 'px Courier New';
+    while (fs > 9 && ctx.measureText(label).width > bw - 18) { fs--; ctx.font = 'bold ' + fs + 'px Courier New'; }
     ctx.textAlign = 'center';
-    ctx.fillStyle = '#0f6273';
-    ctx.fillText(label, bx + bw / 2 + 1.5, by + bh / 2 + 6.5);
-    ctx.fillStyle = '#12c3d7';
-    ctx.fillText(label, bx + bw / 2, by + bh / 2 + 5);
+    ctx.fillStyle = '#0d5f73';
+    ctx.fillText(label, bx + bw / 2, by + bh / 2 + fs * 0.36);
+    return { x: bx, y: by, w: bw, h: bh };
+  }
+
+  // buton in stilul PNG-urilor RETRY/BACK (rama cyan, interior transparent, litere cyan)
+  // - folosit langa ele pe ecranul de moarte, ca sa nu iasa in evidenta ca butoanele albe de meniu
+  function frameButton(bx, by, bw, bh, label, size) {
+    ctx.save();
+    ctx.shadowBlur = 12; ctx.shadowColor = 'rgba(0,229,255,0.75)';
+    ctx.strokeStyle = '#2fe2f1'; ctx.lineWidth = 3;
+    roundRect(bx + 2, by + 2, bw - 4, bh - 4, 7); ctx.stroke();
+    ctx.restore();
+    ctx.fillStyle = 'rgba(6,12,30,0.55)';
+    roundRect(bx + 4, by + 4, bw - 8, bh - 8, 5); ctx.fill();
+    ctx.strokeStyle = 'rgba(8,40,58,0.9)'; ctx.lineWidth = 1.5;
+    roundRect(bx + 4.5, by + 4.5, bw - 9, bh - 9, 5); ctx.stroke();
+    let fs = size || 17;
+    ctx.font = 'bold ' + fs + 'px Courier New';
+    while (fs > 10 && ctx.measureText(label).width > bw - 22) { fs--; ctx.font = 'bold ' + fs + 'px Courier New'; }
+    ctx.textAlign = 'center';
+    ctx.shadowBlur = 10; ctx.shadowColor = '#00e5ff';
+    ctx.fillStyle = '#a9f3ff';
+    ctx.fillText(label, bx + bw / 2, by + bh / 2 + fs * 0.36);
+    ctx.shadowBlur = 0;
     return { x: bx, y: by, w: bw, h: bh };
   }
 
@@ -1833,35 +1857,52 @@
         ctx.font = '12px Courier New';
         if (!lbTop) { ctx.fillStyle = '#8899bb'; ctx.fillText('loading...', W/2, ty); ty += 18; }
         else {
-          lbTop.forEach((en, i) => {
+          // pe ecrane joase aratam doar top 3, ca sa ramana loc pentru realizari si butoane
+          const lbRows = H < 430 ? 3 : 5;
+          lbTop.slice(0, lbRows).forEach((en, i) => {
             ctx.fillStyle = en.n === save.name ? '#00e5ff' : '#aabbdd';
             ctx.fillText((i + 1) + '. ' + en.n + '  \u2014  ' + en.s, W/2, ty); ty += 17;
           });
-          if (lbRank > 5) { ctx.fillStyle = '#00e5ff'; ctx.fillText('...' + lbRank + '. ' + save.name, W/2, ty); ty += 17; }
+          if (lbRank > lbRows) { ctx.fillStyle = '#00e5ff'; ctx.fillText('...' + lbRank + '. ' + save.name, W/2, ty); ty += 17; }
         }
         ty += 6;
       }
-      for (const t of missionToasts.slice(0, 4)) {
-        neonText('\u2713 ' + t, W/2, ty, 12, '#00ff9d');
-        ty += 20;
-      }
-      if (missionToasts.length > 4) { ctx.font='11px Courier New'; ctx.fillStyle='#00ff9d'; ctx.fillText('+' + (missionToasts.length-4) + ' more rewards', W/2, ty); ty += 18; }
-
       const bw = 156, bgap = 18;
-      const by = Math.min(Math.max(ty + 8, cy + 40), H - 58);
-      deadZones = {};
+      const mainH = bw * imgRatio('retry');
       // butoane rewarded (doar in aplicatie, cu reclama incarcata; o data pe runda)
       const canRevive = isNative && rewardReady && !runRevived;
       const canDbl = isNative && rewardReady && !runDoubled && coinCount > 0;
-      if ((canRevive || canDbl) && by > 100) {
-        const ry = by - 50;
+      const hasRew = canRevive || canDbl;
+      const rowH = hasRew ? mainH + 10 : 0;
+      // butoanele coboara cat e nevoie (cu tot cu randul rewarded) ca realizarile sa nu ramana acoperite
+      const needH = Math.min(missionToasts.length, 4) * 20 + (missionToasts.length > 4 ? 18 : 0);
+      const by = Math.min(Math.max(ty + needH + 8 + rowH, cy + 40), H - 20 - mainH);
+      const ry = by - rowH;
+
+      // cate realizari incap deasupra butoanelor (restul se strang in "+N more rewards")
+      const toastEnd = (hasRew ? ry : by) - 10;
+      const cap = toastEnd >= ty ? Math.floor((toastEnd - ty) / 20) + 1 : 0;
+      let shown = Math.min(missionToasts.length, 4, cap);
+      if (shown < missionToasts.length) shown = Math.max(0, Math.min(shown, cap - 1));
+      for (const t of missionToasts.slice(0, shown)) {
+        neonText('\u2713 ' + t, W/2, ty, 12, '#00ff9d');
+        ty += 20;
+      }
+      if (shown < missionToasts.length) {
+        const mY = Math.min(ty, toastEnd + 14); // nu intra peste butoane nici cand clasamentul ocupa tot
+        ctx.font = '11px Courier New'; ctx.fillStyle = '#00ff9d';
+        ctx.fillText('+' + (missionToasts.length - shown) + ' more rewards', W/2, mY); ty = mY + 18;
+      }
+
+      deadZones = {};
+      if (hasRew && by > 100) {
         if (canRevive && canDbl) {
-          deadZones.revive = button(W/2 - bw - bgap/2, ry, bw, 40, '▶ REVIVE', '#00ff9d', 13);
-          deadZones.dbl    = button(W/2 + bgap/2, ry, bw, 40, '▶ 2X COINS +' + coinCount, '#ffd700', 13);
+          deadZones.revive = frameButton(W/2 - bw - bgap/2, ry, bw, mainH, '▶ REVIVE', 17);
+          deadZones.dbl    = frameButton(W/2 + bgap/2, ry, bw, mainH, '▶ 2X COINS +' + coinCount, 17);
         } else if (canRevive) {
-          deadZones.revive = button(W/2 - bw/2, ry, bw, 40, '▶ REVIVE', '#00ff9d', 13);
+          deadZones.revive = frameButton(W/2 - bw/2, ry, bw, mainH, '▶ REVIVE', 17);
         } else {
-          deadZones.dbl = button(W/2 - bw/2, ry, bw, 40, '▶ 2X COINS +' + coinCount, '#ffd700', 13);
+          deadZones.dbl = frameButton(W/2 - bw/2, ry, bw, mainH, '▶ 2X COINS +' + coinCount, 17);
         }
       }
       deadZones.retry = imgButton('retry', W/2 - bw - bgap/2, by, bw);
@@ -1956,7 +1997,7 @@
     const cx = W / 2;
     const colW = W / 3; // trei coloane egale, garantat fara suprapunere
 
-    neonText('GRAVITY FLIP', cx, 36, 24, '#00e5ff');
+    neonText('GRAVITY BREACH', cx, 36, 24, '#00e5ff');
     ctx.font = 'bold 13px Courier New';
     ctx.fillStyle = '#ffd700';
     ctx.fillText('\u{1F7E1} ' + save.wallet, cx - 70, 58);
@@ -1974,7 +2015,7 @@
     // coloana dreapta: butoane
     const bw = Math.min(200, colW - 20), bh = 36;
     const bx = colW * 2.5 - bw / 2;
-    const bfont = bw < 170 ? 11 : 13;
+    const bfont = bw < 170 ? 12 : 15; // button() micsoreaza singur textul daca nu incape
     let by = Math.max(H * 0.18, 68);
     zones.levels = button(bx, by, bw, bh, 'LEVELS ' + (save.lvl.max - 1) + '/' + LVL_COUNT, '#ff8c00', bfont); by += 46;
     zones.crate = button(bx, by, bw, bh, 'BALL CLAW ' + TUNE.crateCost + ' \u{1F7E1}', '#ffd700', bfont); by += 46;

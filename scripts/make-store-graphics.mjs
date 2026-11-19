@@ -31,7 +31,7 @@ const svgBanner = `<svg width="1024" height="500" xmlns="http://www.w3.org/2000/
     <circle cx="420" cy="100" r="1.5" fill="#00e5ff"/>
   </g>
   <text x="530" y="230" font-family="Impact,Arial Black,sans-serif" font-size="130" font-weight="900" fill="url(#titleCyan)" filter="url(#glow)">GRAVITY</text>
-  <text x="530" y="355" font-family="Impact,Arial Black,sans-serif" font-size="130" font-weight="900" fill="#ff2d95" filter="url(#glow)">FLIP</text>
+  <text x="530" y="355" font-family="Impact,Arial Black,sans-serif" font-size="130" font-weight="900" fill="#ff2d95" filter="url(#glow)">BREACH</text>
   <text x="530" y="410" font-family="Courier New,monospace" font-size="22" fill="#00e5ff" letter-spacing="8">TAP &#183; FLIP &#183; SURVIVE</text>
 </svg>`;
 
