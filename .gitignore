@@ -9,3 +9,10 @@ android/keystore.properties
 KEYSTORE-CREDENTIALS.txt
 *.keystore
 www/
+
+store-assets/promo/frames/
+store-assets/promo/raw/
+store-assets/promo/game-test.html
+store-assets/promo/contact*.png
+dist-crazygames/
+gravity-breach-crazygames.zip

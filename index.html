@@ -349,6 +349,35 @@
     lvl: { max: 1, stars: {} },
   };
   const soundOn = () => save.sound !== false;
+  // ---------- CRAZYGAMES (doar cand pagina include SDK-ul lor - build-ul scripts/build-crazygames.mjs) ----------
+  const CG = window.CrazyGames && window.CrazyGames.SDK;
+  const isCG = !!CG;
+  let cgAdblock = false, cgAdsOff = false, adMuted = false;
+  const cgReady = isCG ? Promise.resolve().then(() => CG.init()).then(async () => {
+    try { cgAdblock = await CG.ad.hasAdblock(); } catch (e) {}
+    rewardReady = !cgAdblock;
+  }).catch(() => {}) : null;
+  if (isCG) {
+    // progresul se salveaza in contul CrazyGames (sdk.data), nu in localStorage-ul paginii
+    window.storage = {
+      get: async k => { await cgReady; try { return { value: CG.data.getItem('gfs-' + k) }; } catch (e) { return { value: null }; } },
+      set: async (k, v) => { await cgReady; try { CG.data.setItem('gfs-' + k, v); } catch (e) {} },
+    };
+  }
+  // ad CrazyGames: pauza + sunet oprit cat ruleaza, apoi cb(ok)
+  function cgAd(type, cb) {
+    CG.ad.requestAd(type, {
+      adStarted: () => { adMuted = true; },
+      adFinished: () => { adMuted = false; cb(true); },
+      adError: (err) => {
+        adMuted = false;
+        const code = err && err.code;
+        if (type === 'rewarded' && (code === 'adsDisabled' || code === 'adblock')) { cgAdsOff = true; rewardReady = false; }
+        cb(false);
+      },
+    });
+  }
+
   // in aplicatia Android / browser local nu exista storage-ul partajat de pe claude.ai;
   // folosim localStorage ca progresul sa persiste intre sesiuni
   if (typeof window.storage === 'undefined' && window.localStorage) {
@@ -416,6 +445,7 @@
     try { await AdMobP.prepareInterstitial({ adId: AD_INTERSTITIAL_ID }); adReady = true; } catch (e) {}
   }
   function maybeShowAd() {
+    if (isCG) { deathsSinceAd++; return; } // pe CrazyGames reclama vine la RETRY (vezi cgRetry)
     if (!AdMobP || save.noAds) return;
     deathsSinceAd++;
     if (deathsSinceAd < 3 || !adReady) { adPrepare(); return; } // inca nu e a 3-a moarte / reclama nu e incarcata
@@ -430,7 +460,20 @@
     if (!AdMobP || rewardReady) return;
     try { await AdMobP.prepareRewardVideoAd({ adId: AD_REWARDED_ID }); rewardReady = true; } catch (e) {}
   }
+  // RETRY pe CrazyGames: midgame la pauza naturala dintre runde (SDK-ul limiteaza la 1 / 3 min)
+  let cgAdBusy = false;
+  function cgRetry() {
+    if (deathsSinceAd < 2) { state = S.PLAY; reset(mode); return; } // nu dupa primele runde
+    deathsSinceAd = 0; cgAdBusy = true;
+    cgAd('midgame', () => { cgAdBusy = false; state = S.PLAY; reset(mode); });
+  }
   function showRewarded(onReward) {
+    if (isCG) {
+      if (!rewardReady || cgAdBusy) { sfx('deny'); return; }
+      cgAdBusy = true;
+      cgAd('rewarded', ok => { cgAdBusy = false; if (ok) onReward(); else sfx('deny'); });
+      return;
+    }
     if (!AdMobP || !rewardReady) { sfx('deny'); return; }
     rewardReady = false; rewardGot = false; rewardCb = onReward;
     AdMobP.showRewardVideoAd().catch(() => { rewardCb = null; rewardPrepare(); });
@@ -487,7 +530,7 @@
     o.start(); o.stop(AC.currentTime + dur);
   }
   function sfx(k) {
-    if (!AC || !soundOn()) return;
+    if (!AC || !soundOn() || adMuted) return;
     if (k === 'flip')       tone(gravDir === 1 ? 480 : 300, 0.1, 'square', 0.1, gravDir === 1 ? 300 : 520);
     else if (k === 'coin')  { tone(880, 0.07, 'square', 0.09); setTimeout(() => tone(1320, 0.09, 'square', 0.09), 55); }
     else if (k === 'rare')  { tone(1046, 0.09, 'triangle', 0.14); setTimeout(() => tone(1568, 0.1, 'triangle', 0.14), 75); setTimeout(() => tone(2093, 0.14, 'triangle', 0.14), 150); }
@@ -592,6 +635,7 @@
     }
     const PAL = ['#ff2d95', '#00e5ff', '#7CFC00', '#ffd700', '#ff8c00', '#b026ff', '#4d9fff', '#00ff9d'];
     crateResult = { ch, dupe, refund, capCol: PAL[Math.floor(Math.random() * PAL.length)] };
+    if (isCG && rarity === 2 && !dupe) { try { CG.game.happytime(); } catch (e) {} }
     crateAnimT = 0;
     crateFx = { grab: false, drop: false, open: false, reveal: false };
     crateParts = null;
@@ -628,7 +672,7 @@
   // fullscreen pe mobil + blocare landscape; Chrome acorda "user activation"
   // abia la pointerup/touchend, NU la pointerdown - de aceea cererea se face acolo
   function goFullscreen() {
-    if (isNative) return; // in aplicatie ecranul e deja imersiv (MainActivity)
+    if (isNative || isCG) return; // aplicatia e deja imersiva; CrazyGames are fullscreen-ul lui
     if (document.fullscreenElement || document.webkitFullscreenElement) return;
     const el = document.documentElement;
     const req = el.requestFullscreen || el.webkitRequestFullscreen;
@@ -644,6 +688,7 @@
 
   window.addEventListener('pointerdown', e => {
     e.preventDefault();
+    if (isCG && cgAdBusy) return;
     initAudio();
     const x = rotated ? e.clientY : e.clientX;
     const y = rotated ? window.innerWidth - e.clientX : e.clientY;
@@ -657,7 +702,7 @@
         showRewarded(() => { runDoubled = true; save.wallet += coinCount; persist(); sfx('buy'); });
         return;
       }
-      if (inZone(x, y, deadZones && deadZones.retry)) { state = S.PLAY; reset(mode); return; }
+      if (inZone(x, y, deadZones && deadZones.retry)) { if (isCG) cgRetry(); else { state = S.PLAY; reset(mode); } return; }
       if (inZone(x, y, deadZones && deadZones.menu))  { state = S.MENU; sfx('coin'); return; }
       return;
     }
@@ -837,7 +882,7 @@
 
   // ---------- CLASAMENT ZILNIC (shared storage) ----------
   async function submitDaily(scoreV) {
-    if (!hasStorage) { lbTop = 'off'; return; }
+    if (!hasStorage || isCG) { lbTop = 'off'; return; }
     const key = 'gf-lb-' + dateStr();
     let arr = [];
     try {
@@ -1871,7 +1916,7 @@
       const mainH = bw * imgRatio('retry');
       // butoane rewarded (doar in aplicatie, cu reclama incarcata; o data pe runda)
       const canRevive = isNative && rewardReady && !runRevived;
-      const canDbl = isNative && rewardReady && !runDoubled && coinCount > 0;
+      const canDbl = (isNative || isCG) && rewardReady && !runDoubled && coinCount > 0;
       const hasRew = canRevive || canDbl;
       const rowH = hasRew ? mainH + 10 : 0;
       // butoanele coboara cat e nevoie (cu tot cu randul rewarded) ca realizarile sa nu ramana acoperite
@@ -2026,8 +2071,14 @@
       zones.noads = button(bx, by, bw, bh, 'REMOVE ADS' + (iapPrice ? '  ' + iapPrice : ''), '#ff5a7a', bfont); by += 46;
     }
     // o tragere gratis pe zi la BALL CLAW, contra unei reclame rewarded
-    if (isNative && rewardReady && save.freeClaw !== dateStr()) {
+    if ((isNative || isCG) && rewardReady && save.freeClaw !== dateStr()) {
       zones.freeclaw = button(bx, by, bw, bh, '▶ FREE BALL CLAW', '#00e5ff', bfont); by += 46;
+    }
+
+    // CrazyGames: cu adblock (sau reclame oprite) bonusurile cu reclama dispar - spunem de ce
+    if (isCG && (cgAdblock || cgAdsOff)) {
+      ctx.font = '11px Courier New'; ctx.fillStyle = '#8899bb'; ctx.textAlign = 'center';
+      ctx.fillText(cgAdblock ? 'Ad bonuses off: ad blocker detected' : 'Ad bonuses unavailable right now', bx + bw / 2, by + 14);
     }
 
     // PLAY button (PackCyanBlue) + sound toggle
@@ -2580,9 +2631,17 @@
 
   // ---------- LOOP ----------
   let last = performance.now();
+  let cgLastState = -1;
   function loop(now) {
     const dt = Math.min((now - last) / 1000, 0.033);
     last = now;
+    if (isCG && state !== cgLastState) {
+      try {
+        if (state === S.PLAY) CG.game.gameplayStart();
+        else if (cgLastState === S.PLAY) CG.game.gameplayStop();
+      } catch (e) {}
+      cgLastState = state;
+    }
     update(dt);
     render();
     requestAnimationFrame(loop);
